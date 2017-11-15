@@ -17,7 +17,7 @@
     //Empty factory to hook into $httpProvider.interceptors
     //Directive will hookup request, response, and responseError interceptors
     overlayApp.factory('ngplus.httpInterceptor', httpInterceptor);
-    function httpInterceptor () { return {} }
+    function httpInterceptor () { return {}; }
 
     //Hook httpInterceptor factory into the $httpProvider interceptors so that we can monitor XHR calls
     overlayApp.config(['$httpProvider', httpProvider]);
@@ -28,14 +28,14 @@
     //Directive that uses the httpInterceptor factory above to monitor XHR calls
     //When a call is made it displays an overlay and a content area
     //No attempt has been made at this point to test on older browsers
-    overlayApp.directive('ngplusOverlay', ['$q', '$timeout', '$window', 'ngplus.httpInterceptor', '$rootScope', overlay]);
+    overlayApp.directive('ngplusOverlay', ['$q', '$timeout', '$window', 'ngplus.httpInterceptor', '$http', overlay]);
 
-    function overlay ($q, $timeout, $window, httpInterceptor, rootScope) {
+    function overlay ($q, $timeout, $window, httpInterceptor, $http) {
         var directive = {
             scope: {
-                ngplusOverlayDelayIn: "@",
-                ngplusOverlayDelayOut: "@",
-                ngplusOverlayAnimation: "@"
+                ngplusOverlayDelayIn: '@',
+                ngplusOverlayDelayOut: '@',
+                ngplusOverlayAnimation: '@'
             },
             restrict: 'EA',
             transclude: true,
@@ -66,22 +66,12 @@
             var timerPromiseHide = null;
 
             init();
-            
-            var wait = 0;
-            rootScope.$on('showSpinner', () => {
-              if (++wait === 1) {
-                showOverlay()
-              }
-            })
-            rootScope.$on('hideSpinner', () => {
-              if (--wait === 0) {
-                hideOverlay()
-              }
-            })
 
             function init() {
                 wireUpHttpInterceptor();
-                if (window.jQuery) wirejQueryInterceptor();
+                if (window.jQuery) {
+                    wirejQueryInterceptor();
+                }
                 overlayContainer = document.getElementById('ngplus-overlay-container');
             }
 
@@ -96,14 +86,14 @@
                 };
 
                 httpInterceptor.response = function (response) {
-                    if (response && response.config && !response.config.hideOverlay) {
+                    if (response && !response.config.hideOverlay) {
                         processResponse();
                     }
                     return response || $q.when(response);
                 };
 
                 httpInterceptor.responseError = function (rejection) {
-                    if (rejection && rejection.config && !rejection.config.hideOverlay) {
+                    if (rejection && !rejection.config.hideOverlay) {
                         processResponse();
                     }
                     return $q.reject(rejection);
@@ -112,42 +102,36 @@
 
             //Monitor jQuery Ajax calls in case it's used in an app
             function wirejQueryInterceptor() {
-
-                $(document).ajaxSend(function(e, xhr, options) {
-                  if (options && !options.hideOverlay) {
-                    processRequest();
-                  }
-                });
-
-                // ajax complete always gets fired, even on errors
-                $(document).ajaxComplete(function(e, xhr, options) {
-                  if (options && !options.hideOverlay) {
-                    processResponse();
-                  }
-                });
+                $(document).ajaxStart(function () { processRequest(); });
+                $(document).ajaxComplete(function () { processResponse(); });
+                $(document).ajaxError(function () { processResponse(); });
             }
 
             function processRequest() {
                 queue.push({});
-                if (queue.length == 1) {
+                if (queue.length === 1) {
                     timerPromise = $timeout(function () {
-                        if (queue.length) showOverlay();
+                        if (queue.length) {
+                            showOverlay();
+                        }
                     }, delayIn); //Delay showing for 500 millis to avoid flicker
                 }
             }
 
             function processResponse() {
                 queue.pop();
-                if (queue.length == 0) {
+                if (queue.length === 0) {
                     //Since we don't know if another XHR request will be made, pause before
                     //hiding the overlay. If another XHR request comes in then the overlay
                     //will stay visible which prevents a flicker
                     timerPromiseHide = $timeout(function () {
                         //Make sure queue is still 0 since a new XHR request may have come in
                         //while timer was running
-                        if (queue.length == 0) {
+                        if (queue.length === 0) {
                             hideOverlay();
-                            if (timerPromiseHide) $timeout.cancel(timerPromiseHide);
+                            if (timerPromiseHide) {
+                                $timeout.cancel(timerPromiseHide);
+                            }
                         }
                     }, delayOut);
                 }
@@ -157,7 +141,7 @@
                 var w = 0;
                 var h = 0;
                 if (!$window.innerWidth) {
-                    if (!(document.documentElement.clientWidth == 0)) {
+                    if (document.documentElement.clientWidth !== 0) {
                         w = document.documentElement.clientWidth;
                         h = document.documentElement.clientHeight;
                     }
@@ -181,50 +165,26 @@
             }
 
             function hideOverlay() {
-                if (timerPromise) $timeout.cancel(timerPromise);
+                if (timerPromise) {
+                    $timeout.cancel(timerPromise);
+                }
                 scope.show = false;
             }
 
-            var getComputedStyle = (function () {
+            var getComputedStyle = function () {
                 var func = null;
                 if (document.defaultView && document.defaultView.getComputedStyle) {
                     func = document.defaultView.getComputedStyle;
-                } else if (typeof (document.body.currentStyle) !== "undefined") {
+                } else if (typeof (document.body.currentStyle) !== 'undefined') {
                     func = function (element, anything) {
-                        return element["currentStyle"];
-                    };
-                } else {
-                    // Polyfill for getComputedStyle from: https://gist.github.com/twolfson/5369885
-                    func = function (el, prop, getComputedStyle) {
-                        getComputedStyle = window.getComputedStyle;
-
-                        // In one fell swoop
-                        return (
-                            // If we have getComputedStyle
-                            getComputedStyle ?
-
-                            // Query it
-                            // TODO: From CSS-Query notes, we might need (node, null) for FF
-                            getComputedStyle(el) :
-
-                            // Otherwise, we are in IE and use currentStyle
-                            el.currentStyle
-                        )[
-                            // Switch to camelCase for CSSOM
-                            // DEV: Grabbed from jQuery
-                            // https://github.com/jquery/jquery/blob/1.9-stable/src/css.js#L191-L194
-                            // https://github.com/jquery/jquery/blob/1.9-stable/src/core.js#L593-L597
-                            prop.replace(/-(\w)/gi, function (word, letter) {
-                                return letter.toUpperCase();
-                            })
-                        ];
+                        return element['currentStyle'];
                     };
                 }
 
                 return function (element, style) {
                     return func(element, null)[style];
-                };
-            })();
+                }
+            }();
         }
     }
 }());
